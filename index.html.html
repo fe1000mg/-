@@ -1,0 +1,952 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>在庫ノート - 日用品・消耗品管理</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Zen+Kaku+Gothic+New:wght@400;500;700&family=JetBrains+Mono:wght@500;600&display=swap');
+
+:root{
+  --paper:#F2EFE4;
+  --card:#FBFAF5;
+  --ink:#2E2B22;
+  --ink-sub:#7A755F;
+  --line:#DAD3BE;
+  --stamp:#B5451F;
+  --safe:#3F7D53;
+  --safe-bg:#E6F0E7;
+  --warn:#C98A2C;
+  --warn-bg:#F7EDDA;
+  --danger:#B23B3B;
+  --danger-bg:#F6E4E1;
+}
+*{box-sizing:border-box;}
+body{
+  margin:0;
+  background:var(--paper);
+  color:var(--ink);
+  font-family:'Zen Kaku Gothic New', sans-serif;
+  padding:32px 20px 80px;
+}
+.wrap{max-width:960px;margin:0 auto;}
+
+header{
+  display:flex;
+  justify-content:space-between;
+  align-items:flex-end;
+  border-bottom:2px solid var(--ink);
+  padding-bottom:14px;
+  margin-bottom:24px;
+}
+header h1{
+  font-size:24px;
+  font-weight:700;
+  margin:0;
+  letter-spacing:0.02em;
+}
+header p{
+  margin:4px 0 0;
+  font-size:12.5px;
+  color:var(--ink-sub);
+}
+.summary{
+  display:flex;
+  gap:18px;
+  font-family:'JetBrains Mono',monospace;
+  font-size:13px;
+}
+.summary div{text-align:right;}
+.summary b{display:block;font-size:20px;font-weight:600;}
+.summary .s-total b{color:var(--ink);}
+.summary .s-warn b{color:var(--warn);}
+.summary .s-danger b{color:var(--danger);}
+
+.panel{
+  background:var(--card);
+  border:1px solid var(--line);
+  border-radius:6px;
+  padding:18px 20px;
+  margin-bottom:20px;
+}
+.panel h2{
+  font-size:14px;
+  font-weight:700;
+  margin:0 0 12px;
+  color:var(--ink);
+}
+.form-grid{
+  display:grid;
+  grid-template-columns:1.4fr 1fr 0.8fr 0.8fr 0.8fr auto;
+  gap:10px;
+  align-items:end;
+}
+.field{display:flex;flex-direction:column;gap:4px;}
+.field label{font-size:11px;color:var(--ink-sub);}
+.field input, .field select{
+  font-family:inherit;
+  font-size:13.5px;
+  padding:8px 9px;
+  border:1px solid var(--line);
+  border-radius:4px;
+  background:#fff;
+  color:var(--ink);
+}
+.field input:focus, .field select:focus{outline:2px solid var(--stamp);outline-offset:-1px;}
+button{
+  font-family:inherit;
+  cursor:pointer;
+}
+.btn-add{
+  background:var(--ink);
+  color:var(--paper);
+  border:none;
+  border-radius:4px;
+  padding:9px 16px;
+  font-size:13.5px;
+  font-weight:500;
+  white-space:nowrap;
+}
+.btn-add:hover{background:#494533;}
+
+.controls{
+  display:flex;
+  gap:10px;
+  margin-bottom:16px;
+  flex-wrap:wrap;
+}
+.controls input, .controls select{
+  font-family:inherit;
+  font-size:13px;
+  padding:7px 10px;
+  border:1px solid var(--line);
+  border-radius:4px;
+  background:var(--card);
+  color:var(--ink);
+}
+.controls input{flex:1;min-width:160px;}
+
+.grid{
+  display:grid;
+  grid-template-columns:repeat(auto-fill, minmax(260px, 1fr));
+  gap:14px;
+}
+
+.tag{
+  position:relative;
+  background:var(--card);
+  border:1px solid var(--line);
+  border-radius:8px;
+  padding:16px 16px 14px;
+}
+.tag::before{
+  content:'';
+  position:absolute;
+  top:14px;
+  left:-6px;
+  width:12px;
+  height:12px;
+  background:var(--paper);
+  border:1px solid var(--line);
+  border-radius:50%;
+}
+.tag-top{
+  display:flex;
+  justify-content:space-between;
+  align-items:flex-start;
+  gap:8px;
+}
+.tag-name{font-size:15.5px;font-weight:700;line-height:1.3;}
+.tag-cat{
+  display:inline-block;
+  margin-top:4px;
+  font-size:10.5px;
+  color:var(--ink-sub);
+  border:1px solid var(--line);
+  border-radius:3px;
+  padding:1px 6px;
+}
+.gauge{position:relative;width:52px;height:52px;flex-shrink:0;}
+.gauge svg{transform:rotate(-90deg);}
+.gauge-pct{
+  position:absolute;inset:0;
+  display:flex;align-items:center;justify-content:center;
+  font-family:'JetBrains Mono',monospace;
+  font-size:11px;font-weight:600;
+}
+.tag-mid{
+  display:flex;
+  align-items:baseline;
+  gap:6px;
+  margin:12px 0 4px;
+  font-family:'JetBrains Mono',monospace;
+}
+.tag-mid .cur{font-size:22px;font-weight:600;}
+.tag-mid .unit{font-size:12px;color:var(--ink-sub);}
+.tag-mid .thresh{font-size:11px;color:var(--ink-sub);margin-left:auto;}
+.status-pill{
+  display:inline-block;
+  font-size:10.5px;
+  font-weight:500;
+  padding:2px 8px;
+  border-radius:3px;
+  margin-bottom:10px;
+}
+.status-safe{background:var(--safe-bg);color:var(--safe);}
+.status-warn{background:var(--warn-bg);color:var(--warn);}
+.status-danger{background:var(--danger-bg);color:var(--danger);}
+
+.tag-actions{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  border-top:1px dashed var(--line);
+  padding-top:10px;
+}
+.qty-btns{display:flex;gap:6px;}
+.qty-btns button{
+  width:28px;height:28px;
+  border:1px solid var(--line);
+  background:#fff;
+  border-radius:4px;
+  font-size:15px;
+  color:var(--ink);
+  line-height:1;
+}
+.qty-btns button:hover{border-color:var(--ink);}
+.edit-btns{display:flex;gap:10px;}
+.edit-btns button{
+  border:none;background:none;
+  font-size:11.5px;
+  color:var(--ink-sub);
+  text-decoration:underline;
+  padding:0;
+}
+.edit-btns button:hover{color:var(--stamp);}
+
+.empty{
+  text-align:center;
+  padding:50px 20px;
+  color:var(--ink-sub);
+  font-size:13.5px;
+  border:1px dashed var(--line);
+  border-radius:8px;
+  background:var(--card);
+}
+
+.updated{font-size:10.5px;color:var(--ink-sub);margin-top:8px;}
+
+.scan-actions{display:flex;gap:10px;flex-wrap:wrap;}
+.btn-scan{
+  background:#fff;
+  border:1px solid var(--ink);
+  color:var(--ink);
+  border-radius:4px;
+  padding:9px 16px;
+  font-size:13.5px;
+  font-weight:500;
+}
+.btn-scan:hover{background:var(--paper);}
+#scan-viewport{
+  position:relative;
+  width:100%;
+  max-width:420px;
+  min-height:220px;
+  background:#111;
+  border-radius:6px;
+  overflow:hidden;
+  margin-top:14px;
+  display:none;
+}
+#scan-viewport video, #scan-viewport canvas{
+  position:absolute;top:0;left:0;
+  width:100%;height:100%;
+  object-fit:cover;
+}
+#cam-video{width:100%;height:100%;object-fit:cover;}
+.scan-panel-actions{
+  display:flex;
+  gap:10px;
+  margin-top:10px;
+  flex-wrap:wrap;
+}
+.scan-status{
+  margin-top:12px;
+  font-size:13px;
+  line-height:1.6;
+  color:var(--ink-sub);
+}
+.scan-result{
+  margin-top:12px;
+  background:var(--paper);
+  border:1px solid var(--line);
+  border-radius:6px;
+  padding:12px 14px;
+  font-size:13px;
+}
+.scan-result b{font-size:14.5px;color:var(--ink);}
+.scan-result .row{margin-top:4px;color:var(--ink-sub);}
+.scan-result-actions{display:flex;gap:10px;margin-top:12px;}
+.btn-apply{
+  background:var(--ink);color:var(--paper);
+  border:none;border-radius:4px;
+  padding:7px 14px;font-size:12.5px;font-weight:500;
+}
+.btn-cancel{
+  background:none;border:1px solid var(--line);
+  border-radius:4px;color:var(--ink-sub);
+  padding:7px 14px;font-size:12.5px;
+}
+.note{font-size:11.5px;color:var(--ink-sub);margin-top:10px;}
+
+.sheet-row{display:flex;gap:10px;flex-wrap:wrap;align-items:center;}
+.sheet-row input{
+  flex:1;min-width:220px;
+  font-family:inherit;font-size:13px;
+  padding:8px 10px;border:1px solid var(--line);
+  border-radius:4px;background:#fff;color:var(--ink);
+}
+#sync-status{font-size:12px;color:var(--ink-sub);margin-top:8px;}
+
+@media (max-width:640px){
+  body{padding:16px 12px 60px;}
+
+  header{flex-direction:column;align-items:flex-start;gap:12px;padding-bottom:12px;}
+  header h1{font-size:20px;}
+  .summary{align-self:stretch;justify-content:space-between;gap:8px;}
+  .summary b{font-size:17px;}
+
+  .panel{padding:14px 14px;}
+  .panel h2{font-size:13px;}
+
+  .form-grid{grid-template-columns:1fr;gap:10px;}
+  .btn-add{width:100%;padding:11px 16px;font-size:14px;}
+
+  .sheet-row{flex-direction:column;align-items:stretch;}
+  .sheet-row input{min-width:0;}
+  .sheet-row button{width:100%;}
+
+  .scan-actions{flex-direction:column;}
+  .scan-actions button{width:100%;}
+  #scan-viewport{max-width:100%;min-height:260px;}
+  .scan-panel-actions #btn-capture{width:100%;}
+
+  .controls{flex-direction:column;}
+  .controls input, .controls select{width:100%;}
+
+  .grid{grid-template-columns:1fr;gap:12px;}
+  .tag{padding:14px 14px 12px;}
+  .tag-name{font-size:15px;}
+  .tag-mid .cur{font-size:24px;}
+
+  .qty-btns button{width:36px;height:36px;font-size:18px;}
+  .edit-btns button{font-size:12.5px;}
+}
+
+@media (max-width:400px){
+  .summary{font-size:11.5px;}
+  .summary b{font-size:15px;}
+}
+</style>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/quagga/0.12.1/quagga.min.js"></script>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <div>
+      <h1>在庫ノート</h1>
+      <p>日用品・消耗品の残量チェック</p>
+    </div>
+    <div class="summary">
+      <div class="s-total"><b id="sum-total">0</b>登録品目</div>
+      <div class="s-warn"><b id="sum-warn">0</b>要注意</div>
+      <div class="s-danger"><b id="sum-danger">0</b>要発注</div>
+    </div>
+  </header>
+
+  <div class="panel">
+    <h2>スプレッドシートと共有</h2>
+    <div class="sheet-row">
+      <input id="sheet-url" type="text" placeholder="Google Apps Script の Web アプリ URL を貼り付け">
+      <button class="btn-scan" id="btn-sheet-connect">接続する</button>
+      <button class="btn-scan" id="btn-sheet-disconnect" style="display:none;">連携を解除</button>
+    </div>
+    <div id="sync-status">未接続（この端末のみに保存されるローカルモードです）</div>
+  </div>
+
+  <div class="panel">
+    <h2>スキャンして追加</h2>
+    <div class="scan-actions">
+      <button class="btn-scan" id="btn-scan-barcode">バーコードを読み取る</button>
+      <button class="btn-scan" id="btn-scan-photo">写真から品目を判定する</button>
+      <button class="btn-scan" id="btn-scan-stop" style="display:none;">カメラを閉じる</button>
+    </div>
+
+    <div id="scan-viewport">
+      <video id="cam-video" autoplay playsinline muted></video>
+    </div>
+    <div class="scan-panel-actions" id="photo-capture-actions" style="display:none;">
+      <button class="btn-add" id="btn-capture">撮影して判定する</button>
+    </div>
+    <canvas id="cam-canvas" style="display:none;"></canvas>
+
+    <div class="scan-status" id="scan-status"></div>
+
+    <div class="scan-result" id="scan-result" style="display:none;">
+      <b id="sr-name"></b>
+      <div class="row" id="sr-code"></div>
+      <div class="row" id="sr-category"></div>
+      <div class="scan-result-actions">
+        <button class="btn-apply" id="btn-apply-result">下のフォームに反映する</button>
+        <button class="btn-cancel" id="btn-cancel-result">取り消す</button>
+      </div>
+    </div>
+    <p class="note">バーコード読み取りはブラウザ内で処理されます。写真判定はAIによる推定のため、追加前に品名・数量をご確認ください。カメラの利用には許可が必要です。</p>
+  </div>
+
+  <div class="panel">
+    <h2>品目を追加</h2>
+    <div class="form-grid">
+      <div class="field">
+        <label for="in-name">品名</label>
+        <input id="in-name" type="text" placeholder="例：トイレットペーパー">
+      </div>
+      <div class="field">
+        <label for="in-cat">カテゴリ</label>
+        <input id="in-cat" type="text" placeholder="例：紙製品" list="cat-list">
+        <datalist id="cat-list"></datalist>
+      </div>
+      <div class="field">
+        <label for="in-unit">単位</label>
+        <input id="in-unit" type="text" placeholder="個・本・枚など">
+      </div>
+      <div class="field">
+        <label for="in-cur">現在の残り</label>
+        <input id="in-cur" type="number" min="0" step="1" placeholder="8">
+      </div>
+      <div class="field">
+        <label for="in-thresh">発注ライン</label>
+        <input id="in-thresh" type="number" min="0" step="1" placeholder="3">
+      </div>
+      <button class="btn-add" id="add-btn">追加する</button>
+    </div>
+  </div>
+
+  <div class="controls">
+    <input id="search" type="text" placeholder="品名で検索">
+    <select id="filter-cat"><option value="">すべてのカテゴリ</option></select>
+    <select id="sort-by">
+      <option value="urgent">残り少ない順</option>
+      <option value="name">名前順</option>
+      <option value="updated">更新日順</option>
+    </select>
+  </div>
+
+  <div id="grid" class="grid"></div>
+  <div id="empty" class="empty" style="display:none;">
+    登録された消耗品がありません。上のフォームから追加してください。
+  </div>
+
+</div>
+
+<script>
+let items = [];
+let sheetUrl = '';
+let autoRefreshTimer = null;
+
+async function loadItems(silent){
+  if(sheetUrl){
+    try{
+      const res = await fetch(`${sheetUrl}?action=list`);
+      const json = await res.json();
+      items = Array.isArray(json) ? json : (json.items || []);
+      setSyncStatus(`スプレッドシートと連携中（最終更新: ${new Date().toLocaleTimeString('ja-JP')}）`);
+    }catch(e){
+      if(!silent) setSyncStatus('スプレッドシートに接続できませんでした。URLをご確認ください。', true);
+      console.error(e);
+    }
+  }else{
+    try{
+      const raw = localStorage.getItem('inventory-items');
+      items = raw ? JSON.parse(raw) : [];
+    }catch(e){
+      items = [];
+    }
+  }
+  render();
+}
+
+async function saveItems(){
+  // ローカルモードのみで使用。スプレッドシート連携時は upsertRemote / deleteRemote を使う。
+  try{
+    localStorage.setItem('inventory-items', JSON.stringify(items));
+  }catch(e){
+    console.error('保存に失敗しました', e);
+  }
+}
+
+async function persistItem(item){
+  if(sheetUrl){
+    try{
+      await fetch(sheetUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify({ action: 'upsert', item })
+      });
+    }catch(e){
+      setSyncStatus('スプレッドシートへの保存に失敗しました。通信環境をご確認ください。', true);
+      console.error(e);
+      return;
+    }
+    await loadItems(true);
+  }else{
+    await saveItems();
+  }
+}
+
+async function deleteItemRemote(id){
+  if(sheetUrl){
+    try{
+      await fetch(sheetUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify({ action: 'delete', id })
+      });
+    }catch(e){
+      setSyncStatus('スプレッドシートへの削除反映に失敗しました。', true);
+      console.error(e);
+      return;
+    }
+    await loadItems(true);
+  }else{
+    items = items.filter(i => i.id !== id);
+    await saveItems();
+  }
+}
+
+function setSyncStatus(msg, isError){
+  const el = document.getElementById('sync-status');
+  if(!el) return;
+  el.textContent = msg;
+  el.style.color = isError ? 'var(--danger)' : 'var(--ink-sub)';
+}
+
+async function connectSheet(){
+  const url = document.getElementById('sheet-url').value.trim();
+  if(!url){ setSyncStatus('WebアプリのURLを入力してください。', true); return; }
+  sheetUrl = url;
+  try{ localStorage.setItem('sheet-webapp-url', url); }catch(e){}
+  setSyncStatus('接続を確認しています…');
+  await loadItems();
+  if(autoRefreshTimer) clearInterval(autoRefreshTimer);
+  autoRefreshTimer = setInterval(() => loadItems(true), 20000);
+  document.getElementById('btn-sheet-disconnect').style.display = 'inline-block';
+}
+
+async function disconnectSheet(){
+  sheetUrl = '';
+  try{ localStorage.removeItem('sheet-webapp-url'); }catch(e){}
+  if(autoRefreshTimer) clearInterval(autoRefreshTimer);
+  autoRefreshTimer = null;
+  setSyncStatus('ローカル保存モードに切り替えました（この端末のみに保存されます）。');
+  document.getElementById('btn-sheet-disconnect').style.display = 'none';
+  await loadItems();
+}
+
+function fullQty(item){
+  const t = Number(item.threshold) || 0;
+  return Math.max(item.full || 0, t * 2, Number(item.current) || 0, 1);
+}
+
+function ratio(item){
+  const f = fullQty(item);
+  return Math.max(0, Math.min(1, (Number(item.current)||0) / f));
+}
+
+function status(item){
+  const cur = Number(item.current)||0;
+  const t = Number(item.threshold)||0;
+  if(cur <= t*0.5) return 'danger';
+  if(cur <= t) return 'warn';
+  return 'safe';
+}
+
+function statusLabel(s){
+  return s === 'danger' ? '要発注' : s === 'warn' ? '要注意' : '在庫十分';
+}
+
+function statusColor(s){
+  return s === 'danger' ? '#B23B3B' : s === 'warn' ? '#C98A2C' : '#3F7D53';
+}
+
+function gaugeSvg(item){
+  const r = 22, c = 2*Math.PI*r;
+  const pct = ratio(item);
+  const color = statusColor(status(item));
+  return `<svg width="52" height="52" viewBox="0 0 52 52">
+    <circle cx="26" cy="26" r="${r}" fill="none" stroke="#DAD3BE" stroke-width="5"/>
+    <circle cx="26" cy="26" r="${r}" fill="none" stroke="${color}" stroke-width="5"
+      stroke-dasharray="${c}" stroke-dashoffset="${c*(1-pct)}" stroke-linecap="round"/>
+  </svg>`;
+}
+
+function fmtDate(iso){
+  if(!iso) return '';
+  const d = new Date(iso);
+  return `${d.getMonth()+1}/${d.getDate()} 更新`;
+}
+
+function render(){
+  const search = document.getElementById('search').value.trim().toLowerCase();
+  const catFilter = document.getElementById('filter-cat').value;
+  const sortBy = document.getElementById('sort-by').value;
+
+  const cats = [...new Set(items.map(i => i.category).filter(Boolean))].sort();
+  const catSelect = document.getElementById('filter-cat');
+  const prevCat = catSelect.value;
+  catSelect.innerHTML = '<option value="">すべてのカテゴリ</option>' +
+    cats.map(c => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join('');
+  catSelect.value = cats.includes(prevCat) ? prevCat : '';
+  document.getElementById('cat-list').innerHTML = cats.map(c => `<option value="${escapeHtml(c)}">`).join('');
+
+  let list = items.filter(i => {
+    if(search && !i.name.toLowerCase().includes(search)) return false;
+    if(catFilter && i.category !== catFilter) return false;
+    return true;
+  });
+
+  if(sortBy === 'urgent'){
+    list.sort((a,b) => ratio(a) - ratio(b));
+  }else if(sortBy === 'name'){
+    list.sort((a,b) => a.name.localeCompare(b.name, 'ja'));
+  }else if(sortBy === 'updated'){
+    list.sort((a,b) => new Date(b.updatedAt||0) - new Date(a.updatedAt||0));
+  }
+
+  document.getElementById('sum-total').textContent = items.length;
+  document.getElementById('sum-warn').textContent = items.filter(i => status(i)==='warn').length;
+  document.getElementById('sum-danger').textContent = items.filter(i => status(i)==='danger').length;
+
+  const grid = document.getElementById('grid');
+  const empty = document.getElementById('empty');
+
+  if(list.length === 0){
+    grid.innerHTML = '';
+    empty.style.display = 'block';
+    empty.textContent = items.length === 0
+      ? '登録された消耗品がありません。上のフォームから追加してください。'
+      : '条件に一致する品目がありません。';
+    return;
+  }
+  empty.style.display = 'none';
+
+  grid.innerHTML = list.map(item => {
+    const s = status(item);
+    const pct = Math.round(ratio(item)*100);
+    return `
+    <div class="tag" data-id="${item.id}">
+      <div class="tag-top">
+        <div>
+          <div class="tag-name">${escapeHtml(item.name)}</div>
+          ${item.category ? `<span class="tag-cat">${escapeHtml(item.category)}</span>` : ''}
+        </div>
+        <div class="gauge">${gaugeSvg(item)}<div class="gauge-pct">${pct}%</div></div>
+      </div>
+      <div class="tag-mid">
+        <span class="cur">${Number(item.current)||0}</span>
+        <span class="unit">${escapeHtml(item.unit||'')}</span>
+        <span class="thresh">発注ライン: ${Number(item.threshold)||0}${escapeHtml(item.unit||'')}</span>
+      </div>
+      <span class="status-pill status-${s}">${statusLabel(s)}</span>
+      <div class="tag-actions">
+        <div class="qty-btns">
+          <button data-act="dec" title="減らす">−</button>
+          <button data-act="inc" title="増やす">＋</button>
+        </div>
+        <div class="edit-btns">
+          <button data-act="edit">編集</button>
+          <button data-act="del">削除</button>
+        </div>
+      </div>
+      <div class="updated">${fmtDate(item.updatedAt)}</div>
+    </div>`;
+  }).join('');
+}
+
+function escapeHtml(s){
+  return String(s).replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
+}
+
+document.getElementById('add-btn').addEventListener('click', async () => {
+  const name = document.getElementById('in-name').value.trim();
+  if(!name){ document.getElementById('in-name').focus(); return; }
+  const category = document.getElementById('in-cat').value.trim();
+  const unit = document.getElementById('in-unit').value.trim();
+  const current = Number(document.getElementById('in-cur').value) || 0;
+  const threshold = Number(document.getElementById('in-thresh').value) || 0;
+
+  const newItem = {
+    id: 'item_' + Date.now() + '_' + Math.random().toString(36).slice(2,7),
+    name, category, unit, current, threshold,
+    updatedAt: new Date().toISOString()
+  };
+  if(!sheetUrl) items.push(newItem);
+  await persistItem(newItem);
+  ['in-name','in-cat','in-unit','in-cur','in-thresh'].forEach(id => document.getElementById(id).value = '');
+  render();
+});
+
+document.getElementById('grid').addEventListener('click', async (e) => {
+  const btn = e.target.closest('button[data-act]');
+  if(!btn) return;
+  const card = e.target.closest('.tag');
+  const id = card.dataset.id;
+  const item = items.find(i => i.id === id);
+  if(!item) return;
+  const act = btn.dataset.act;
+
+  if(act === 'inc'){
+    item.current = (Number(item.current)||0) + 1;
+    item.updatedAt = new Date().toISOString();
+    await persistItem(item);
+  }else if(act === 'dec'){
+    item.current = Math.max(0, (Number(item.current)||0) - 1);
+    item.updatedAt = new Date().toISOString();
+    await persistItem(item);
+  }else if(act === 'del'){
+    if(!confirm(`「${item.name}」を削除しますか？`)) return;
+    await deleteItemRemote(id);
+  }else if(act === 'edit'){
+    const newName = prompt('品名', item.name);
+    if(newName === null) return;
+    const newCat = prompt('カテゴリ', item.category || '');
+    const newUnit = prompt('単位', item.unit || '');
+    const newCur = prompt('現在の残り', item.current);
+    const newThresh = prompt('発注ライン', item.threshold);
+    item.name = newName.trim() || item.name;
+    item.category = (newCat||'').trim();
+    item.unit = (newUnit||'').trim();
+    item.current = Number(newCur) || 0;
+    item.threshold = Number(newThresh) || 0;
+    item.updatedAt = new Date().toISOString();
+    await persistItem(item);
+  }
+  render();
+});
+
+document.getElementById('btn-sheet-connect').addEventListener('click', connectSheet);
+document.getElementById('btn-sheet-disconnect').addEventListener('click', disconnectSheet);
+
+['search','filter-cat','sort-by'].forEach(id => {
+  document.getElementById(id).addEventListener('input', render);
+  document.getElementById(id).addEventListener('change', render);
+});
+
+// ---- スキャン機能 ----
+let camStream = null;
+let quaggaRunning = false;
+let pendingResult = null;
+
+const scanViewport = document.getElementById('scan-viewport');
+const camVideo = document.getElementById('cam-video');
+const camCanvas = document.getElementById('cam-canvas');
+const scanStatus = document.getElementById('scan-status');
+const scanResultBox = document.getElementById('scan-result');
+const photoActions = document.getElementById('photo-capture-actions');
+const btnStop = document.getElementById('btn-scan-stop');
+
+function setStatus(msg){ scanStatus.textContent = msg || ''; }
+
+function showResult(name, code, category){
+  pendingResult = { name: name||'', code: code||'', category: category||'' };
+  document.getElementById('sr-name').textContent = name || '(品名を推定できませんでした)';
+  document.getElementById('sr-code').textContent = code ? `バーコード: ${code}` : '';
+  document.getElementById('sr-category').textContent = category ? `推定カテゴリ: ${category}` : '';
+  scanResultBox.style.display = 'block';
+}
+
+function hideResult(){
+  scanResultBox.style.display = 'none';
+  pendingResult = null;
+}
+
+async function stopAllScans(){
+  if(quaggaRunning){
+    try{ Quagga.stop(); }catch(e){}
+    quaggaRunning = false;
+  }
+  if(camStream){
+    camStream.getTracks().forEach(t => t.stop());
+    camStream = null;
+  }
+  scanViewport.style.display = 'none';
+  photoActions.style.display = 'none';
+  btnStop.style.display = 'none';
+  camVideo.style.display = 'none';
+}
+
+document.getElementById('btn-scan-stop').addEventListener('click', async () => {
+  await stopAllScans();
+  setStatus('');
+});
+
+document.getElementById('btn-scan-barcode').addEventListener('click', async () => {
+  await stopAllScans();
+  hideResult();
+  if(typeof Quagga === 'undefined'){
+    setStatus('バーコード読み取りライブラリを読み込めませんでした。ネットワーク接続をご確認ください。');
+    return;
+  }
+  scanViewport.style.display = 'block';
+  camVideo.style.display = 'none';
+  btnStop.style.display = 'inline-block';
+  setStatus('カメラを起動しています…商品のバーコードを枠内に写してください。');
+
+  Quagga.init({
+    inputStream: {
+      name: 'Live',
+      type: 'LiveStream',
+      target: scanViewport,
+      constraints: { facingMode: 'environment' }
+    },
+    decoder: {
+      readers: ['ean_reader', 'ean_8_reader', 'upc_reader', 'upc_e_reader', 'code_128_reader']
+    },
+    locate: true
+  }, function(err){
+    if(err){
+      setStatus('カメラを起動できませんでした。ブラウザのカメラ権限をご確認ください。');
+      console.error(err);
+      return;
+    }
+    Quagga.start();
+    quaggaRunning = true;
+    setStatus('バーコードを読み取り中です…枠内に安定して写してください。');
+  });
+
+  Quagga.onDetected(async (data) => {
+    const code = data && data.codeResult && data.codeResult.code;
+    if(!code) return;
+    try{ Quagga.stop(); }catch(e){}
+    quaggaRunning = false;
+    setStatus(`バーコードを検出しました: ${code}　商品名を検索しています…`);
+    let name = '', category = '';
+    try{
+      const res = await fetch(`https://world.openfoodfacts.org/api/v2/product/${code}.json`);
+      const json = await res.json();
+      if(json && json.product){
+        name = json.product.product_name_ja || json.product.product_name || '';
+        category = (json.product.categories || '').split(',')[0] || '';
+      }
+    }catch(e){
+      // 検索に失敗しても続行（手入力で対応）
+    }
+    setStatus(name ? '商品情報が見つかりました。内容を確認して反映してください。'
+                    : '商品名を自動取得できませんでした。バーコード番号のみ反映します。品名は手入力してください。');
+    showResult(name, code, category);
+    scanViewport.style.display = 'none';
+    btnStop.style.display = 'none';
+  });
+});
+
+document.getElementById('btn-scan-photo').addEventListener('click', async () => {
+  await stopAllScans();
+  hideResult();
+  try{
+    camStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+  }catch(e){
+    setStatus('カメラを起動できませんでした。ブラウザのカメラ権限をご確認ください。');
+    return;
+  }
+  camVideo.srcObject = camStream;
+  scanViewport.style.display = 'block';
+  camVideo.style.display = 'block';
+  photoActions.style.display = 'flex';
+  btnStop.style.display = 'inline-block';
+  setStatus('商品が画面中央に写るように構えて、撮影ボタンを押してください。');
+});
+
+document.getElementById('btn-capture').addEventListener('click', async () => {
+  if(!camStream) return;
+  const track = camStream.getVideoTracks()[0];
+  const settings = track.getSettings();
+  camCanvas.width = camVideo.videoWidth || settings.width || 640;
+  camCanvas.height = camVideo.videoHeight || settings.height || 480;
+  camCanvas.getContext('2d').drawImage(camVideo, 0, 0, camCanvas.width, camCanvas.height);
+  const dataUrl = camCanvas.toDataURL('image/jpeg', 0.85);
+  const base64 = dataUrl.split(',')[1];
+
+  await stopAllScans();
+  setStatus('AIが写真から品目を判定しています…');
+
+  try{
+    const response = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: 'claude-sonnet-4-6',
+        max_tokens: 300,
+        system: '与えられた写真に写っている日用品・消耗品を1点特定し、日本語で次のJSON形式のみを出力してください。前置きや説明、コードブロックの記号は一切付けないでください。{"name":"商品名（一般名でよい）","category":"カテゴリ（例：紙製品、洗剤、食品など）","unit":"数える単位（例：個、本、枚、パック）"}。写真から判別できない場合は name を空文字にしてください。',
+        messages: [{
+          role: 'user',
+          content: [
+            { type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: base64 } },
+            { type: 'text', text: 'この写真の日用品・消耗品を判定してください。' }
+          ]
+        }]
+      })
+    });
+    const data = await response.json();
+    const textBlock = (data.content || []).find(b => b.type === 'text');
+    const raw = textBlock ? textBlock.text : '';
+    const clean = raw.replace(/```json|```/g, '').trim();
+    const parsed = JSON.parse(clean);
+
+    if(!parsed.name){
+      setStatus('写真から品目を判定できませんでした。品名を手入力してください。');
+      hideResult();
+      return;
+    }
+    setStatus('AIによる判定結果です。内容を確認して反映してください。');
+    pendingResult = { name: parsed.name, category: parsed.category||'', unit: parsed.unit||'' };
+    document.getElementById('sr-name').textContent = parsed.name;
+    document.getElementById('sr-code').textContent = parsed.unit ? `推定単位: ${parsed.unit}` : '';
+    document.getElementById('sr-category').textContent = parsed.category ? `推定カテゴリ: ${parsed.category}` : '';
+    scanResultBox.style.display = 'block';
+  }catch(e){
+    console.error(e);
+    setStatus('AI判定に失敗しました。ネットワーク接続をご確認のうえ、品名を手入力してください。');
+  }
+});
+
+document.getElementById('btn-apply-result').addEventListener('click', () => {
+  if(!pendingResult) return;
+  document.getElementById('in-name').value = pendingResult.name || '';
+  document.getElementById('in-cat').value = pendingResult.category || '';
+  if(pendingResult.unit) document.getElementById('in-unit').value = pendingResult.unit;
+  hideResult();
+  setStatus('フォームに反映しました。数量を入力して「追加する」を押してください。');
+  document.getElementById('in-cur').focus();
+});
+
+document.getElementById('btn-cancel-result').addEventListener('click', () => {
+  hideResult();
+  setStatus('');
+});
+
+(async function init(){
+  try{
+    const saved = localStorage.getItem('sheet-webapp-url');
+    if(saved){
+      sheetUrl = saved;
+      document.getElementById('sheet-url').value = sheetUrl;
+      document.getElementById('btn-sheet-disconnect').style.display = 'inline-block';
+      autoRefreshTimer = setInterval(() => loadItems(true), 20000);
+    }
+  }catch(e){}
+  await loadItems();
+})();
+</script>
+</body>
+</html>
