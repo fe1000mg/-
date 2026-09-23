@@ -1,12 +1,12 @@
-// ==== 事前設定（GASエディタの「プロジェクトの設定」→「スクリプト プロパティ」に設定） ====
-//   GITHUB_TOKEN     : GitHub Personal Access Token（対象リポジトリへの Contents 書き込み権限）
-//   GITHUB_OWNER     : リポジトリのオーナー名（例: fe1000mg）
-//   GITHUB_REPO      : リポジトリ名（例: -）
-//   GITHUB_ICON_PATH : アイコン画像を置くパス（例: 生活/在庫管理アプリ/icons/）
-//   GITHUB_BRANCH    : コミット先ブランチ（未設定なら main）
+// 事前設定: GASエディタの「プロジェクトの設定」の「スクリプト プロパティ」に以下を追加してください。
+// GITHUB_TOKEN     : GitHub Personal Access Token（対象リポジトリへの Contents 書き込み権限）
+// GITHUB_OWNER     : リポジトリのオーナー名（例 fe1000mg）
+// GITHUB_REPO      : リポジトリ名（例 InventoryManagement）
+// GITHUB_ICON_PATH : アイコン画像を置くパス（例 生活＞在庫管理アプリ＞icons＞）
+// GITHUB_BRANCH    : コミット先ブランチ（未設定なら main）
 //
-// スプレッドシートには「CategoryColors」というシートを追加してください（無ければ自動作成されます）。
-// 1行目のヘッダー: categorySub, color
+// スプレッドシートには CategoryColors というシートを追加してください（無ければ自動作成されます）。
+// 1行目のヘッダーは categorySub と color です。
 
 function doGet(e) {
   const action = (e.parameter && e.parameter.action) || 'list';
@@ -28,42 +28,46 @@ function doGet(e) {
 }
 
 function doPost(e) {
-  const data = JSON.parse(e.postData.contents);
+  try {
+    const data = JSON.parse(e.postData.contents);
 
-  if (data.action === 'uploadIcon') {
-    return uploadIconToGithub_(data);
-  }
-  if (data.action === 'setColor') {
-    return setColor_(data);
-  }
-
-  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheets()[0];
-  const values = sheet.getDataRange().getValues();
-  const headers = values[0];
-  const idCol = headers.indexOf('id');
-
-  if (data.action === 'upsert') {
-    const item = data.item;
-    let rowIndex = -1;
-    for (let i = 1; i < values.length; i++) {
-      if (values[i][idCol] === item.id) { rowIndex = i + 1; break; }
+    if (data.action === 'uploadIcon') {
+      return uploadIconToGithub_(data);
     }
-    const row = headers.map(h => item[h] !== undefined ? item[h] : '');
-    if (rowIndex === -1) {
-      sheet.appendRow(row);
-    } else {
-      sheet.getRange(rowIndex, 1, 1, row.length).setValues([row]);
+    if (data.action === 'setColor') {
+      return setColor_(data);
     }
-  } else if (data.action === 'delete') {
-    for (let i = 1; i < values.length; i++) {
-      if (values[i][idCol] === data.id) {
-        sheet.deleteRow(i + 1);
-        break;
+
+    const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheets()[0];
+    const values = sheet.getDataRange().getValues();
+    const headers = values[0];
+    const idCol = headers.indexOf('id');
+
+    if (data.action === 'upsert') {
+      const item = data.item;
+      let rowIndex = -1;
+      for (let i = 1; i < values.length; i++) {
+        if (values[i][idCol] === item.id) { rowIndex = i + 1; break; }
+      }
+      const row = headers.map(h => item[h] !== undefined ? item[h] : '');
+      if (rowIndex === -1) {
+        sheet.appendRow(row);
+      } else {
+        sheet.getRange(rowIndex, 1, 1, row.length).setValues([row]);
+      }
+    } else if (data.action === 'delete') {
+      for (let i = 1; i < values.length; i++) {
+        if (values[i][idCol] === data.id) {
+          sheet.deleteRow(i + 1);
+          break;
+        }
       }
     }
+    return ContentService.createTextOutput(JSON.stringify({ ok: true }))
+      .setMimeType(ContentService.MimeType.JSON);
+  } catch (err) {
+    return jsonOutput_({ ok: false, error: 'doPost失敗: ' + (err && err.message || err) });
   }
-  return ContentService.createTextOutput(JSON.stringify({ ok: true }))
-    .setMimeType(ContentService.MimeType.JSON);
 }
 
 // ---- 小分類ごとのアイコン色 ----
@@ -117,7 +121,8 @@ function uploadIconToGithub_(data) {
     return jsonOutput_({ ok: false, error: '品名または画像データがありません' });
   }
 
-  const path = basePath.replace(/\/?$/, '/') + data.name + '.png';
+  const basePathWithSlash = basePath.slice(-1) === '/' ? basePath : basePath + '/';
+  const path = basePathWithSlash + data.name + '.png';
   const encodedPath = path.split('/').map(encodeURIComponent).join('/');
   const apiUrl = 'https://api.github.com/repos/' + owner + '/' + repo + '/contents/' + encodedPath;
   const headers = {
@@ -125,32 +130,45 @@ function uploadIconToGithub_(data) {
     'User-Agent': 'inventory-app-gas'
   };
 
-  let sha = null;
-  const getRes = UrlFetchApp.fetch(apiUrl + '?ref=' + encodeURIComponent(branch), {
-    headers: headers,
-    muteHttpExceptions: true
-  });
-  if (getRes.getResponseCode() === 200) {
-    sha = JSON.parse(getRes.getContentText()).sha;
+  try {
+    let sha = null;
+    const getRes = UrlFetchApp.fetch(apiUrl + '?ref=' + encodeURIComponent(branch), {
+      headers: headers,
+      muteHttpExceptions: true
+    });
+    if (getRes.getResponseCode() === 200) {
+      sha = JSON.parse(getRes.getContentText()).sha;
+    } else if (getRes.getResponseCode() !== 404) {
+      return jsonOutput_({ ok: false, error: 'GitHub確認エラー(' + getRes.getResponseCode() + '): ' + getRes.getContentText() });
+    }
+
+    const payload = {
+      message: 'Update icon: ' + data.name,
+      content: data.base64,
+      branch: branch
+    };
+    if (sha) payload.sha = sha;
+
+    const putRes = UrlFetchApp.fetch(apiUrl, {
+      method: 'put',
+      contentType: 'application/json',
+      headers: headers,
+      payload: JSON.stringify(payload),
+      muteHttpExceptions: true
+    });
+
+    const ok = putRes.getResponseCode() === 200 || putRes.getResponseCode() === 201;
+    return jsonOutput_({ ok: ok, error: ok ? '' : ('GitHub更新エラー(' + putRes.getResponseCode() + '): ' + putRes.getContentText()) });
+  } catch (err) {
+    return jsonOutput_({ ok: false, error: 'GitHub通信失敗: ' + (err && err.message || err) });
   }
+}
 
-  const payload = {
-    message: 'Update icon: ' + data.name,
-    content: data.base64,
-    branch: branch
-  };
-  if (sha) payload.sha = sha;
-
-  const putRes = UrlFetchApp.fetch(apiUrl, {
-    method: 'put',
-    contentType: 'application/json',
-    headers: headers,
-    payload: JSON.stringify(payload),
-    muteHttpExceptions: true
-  });
-
-  const ok = putRes.getResponseCode() === 200 || putRes.getResponseCode() === 201;
-  return jsonOutput_({ ok: ok, error: ok ? '' : putRes.getContentText() });
+// 外部通信（GitHub API）の承認ダイアログを表示させるためのテスト用関数。
+// GASエディタの関数選択プルダウンでこれを選び、実行ボタンを押してください。
+function testGithubAuth() {
+  const res = UrlFetchApp.fetch('https://api.github.com', { muteHttpExceptions: true });
+  Logger.log('status: ' + res.getResponseCode());
 }
 
 function jsonOutput_(obj) {
