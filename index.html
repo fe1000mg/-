@@ -360,6 +360,17 @@ button{
   border-radius:4px;
 }
 .shop-empty{color:var(--ink-sub);font-size:13px;padding:20px 0;text-align:center;}
+.shop-remove{
+  width:26px;height:26px;
+  border:1px solid var(--line);
+  background:#fff;
+  border-radius:4px;
+  font-size:14px;
+  color:var(--ink-sub);
+  line-height:1;
+  flex-shrink:0;
+}
+.shop-remove:hover{border-color:var(--danger);color:var(--danger);}
 
 .track-toggle{
   display:flex;
@@ -463,6 +474,7 @@ input[type="range"]{
   .scan-actions button{width:100%;}
   #scan-viewport{max-width:100%;min-height:260px;}
   .scan-panel-actions #btn-capture{width:100%;}
+  .scan-panel-actions button{flex:1 1 auto;}
 
   .controls{flex-direction:column;}
   .controls input, .controls select{width:100%;}
@@ -513,7 +525,10 @@ input[type="range"]{
     <button class="tab-btn active" data-tab="list">在庫一覧</button>
     <button class="tab-btn" data-tab="add">品目を追加</button>
     <button class="tab-btn" data-tab="shopping">買い物リスト</button>
+    <button class="tab-btn" data-tab="cook">料理</button>
   </div>
+  <datalist id="all-items-list"></datalist>
+  <datalist id="cook-items-list"></datalist>
 
   <div class="tab-panel" id="tab-add" style="display:none;">
   <div class="panel">
@@ -639,12 +654,33 @@ input[type="range"]{
   <div class="tab-panel" id="tab-shopping" style="display:none;">
   <div class="panel">
     <h2>買い物リスト</h2>
-    <p class="note" style="margin-top:0;">発注ライン以下の品目を自動で抽出しています。購入する数量を調整し、チェックを入れてリストをコピーできます。</p>
+    <p class="note" style="margin-top:0;">発注ライン以下の品目を自動で抽出しています。安売りなどで買う品目は下の検索欄から手動で追加できます。購入する数量を調整し、チェックを入れて「在庫に反映する」を押すとまとめて在庫が更新されます（残量%で管理している品目は新品に交換したものとして100%になります）。</p>
+    <div class="sheet-row" style="margin-bottom:12px;">
+      <input id="shopping-search" type="text" list="all-items-list" placeholder="品目名で検索してリストに追加">
+      <button class="btn-scan" id="btn-shopping-add">リストに追加</button>
+    </div>
     <div id="shopping-list"></div>
-    <div class="scan-panel-actions" style="display:flex;">
-      <button class="btn-add" id="btn-copy-shopping">リストをコピーする</button>
+    <div class="scan-panel-actions" style="display:flex;flex-wrap:wrap;">
+      <button class="btn-add" id="btn-apply-shopping">在庫に反映する</button>
+      <button class="btn-scan" id="btn-copy-shopping">リストをコピーする</button>
     </div>
     <div class="scan-status" id="shopping-status"></div>
+  </div>
+  </div>
+
+  <div class="tab-panel" id="tab-cook" style="display:none;">
+  <div class="panel">
+    <h2>料理で使った分を減らす</h2>
+    <p class="note" style="margin-top:0;">使った品目を検索してリストに追加し、使用量をまとめて入力してから「在庫からまとめて減らす」を押してください。大分類が「食品」の品目のみ対象です。</p>
+    <div class="sheet-row" style="margin-bottom:12px;">
+      <input id="cook-search" type="text" list="cook-items-list" placeholder="品目名で検索してリストに追加（食品のみ）">
+      <button class="btn-scan" id="btn-cook-add">リストに追加</button>
+    </div>
+    <div id="cook-list"></div>
+    <div class="scan-panel-actions" style="display:flex;">
+      <button class="btn-add" id="btn-apply-cook">在庫からまとめて減らす</button>
+    </div>
+    <div class="scan-status" id="cook-status"></div>
   </div>
   </div>
 
@@ -727,6 +763,11 @@ input[type="range"]{
 let items = [];
 let sheetUrl = '';
 let autoRefreshTimer = null;
+let shoppingManualIds = new Set();
+let cookSelected = new Map();
+let shoppingCheckState = new Map();
+let shoppingQtyState = new Map();
+let cookCheckState = new Map();
 
 async function loadItems(silent){
   if(sheetUrl){
@@ -942,6 +983,8 @@ function render(){
     subCats.map(c => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join('');
   catSubSelect.value = subCats.includes(prevCatSub) ? prevCatSub : '';
   document.getElementById('cat-sub-list').innerHTML = subCats.map(c => `<option value="${escapeHtml(c)}">`).join('');
+  document.getElementById('all-items-list').innerHTML = items.map(i => `<option value="${escapeHtml(i.name)}">`).join('');
+  document.getElementById('cook-items-list').innerHTML = items.filter(i => catMain(i) === '食品').map(i => `<option value="${escapeHtml(i.name)}">`).join('');
 
   let list = items.filter(i => {
     if(search && !i.name.toLowerCase().includes(search)) return false;
@@ -994,6 +1037,7 @@ function render(){
       ? '登録された消耗品がありません。上のフォームから追加してください。'
       : '条件に一致する品目がありません。';
     renderShoppingList();
+    renderCookList();
     return;
   }
   empty.style.display = 'none';
@@ -1049,6 +1093,7 @@ function render(){
   }).join('');
 
   renderShoppingList();
+  renderCookList();
 }
 
 function escapeHtml(s){
@@ -1172,27 +1217,68 @@ function suggestBuyQty(item){
 function renderShoppingList(){
   const box = document.getElementById('shopping-list');
   if(!box) return;
-  const needed = items
-    .filter(i => status(i) !== 'safe')
-    .sort((a,b) => ratio(a) - ratio(b));
 
-  if(needed.length === 0){
-    box.innerHTML = '<div class="shop-empty">現在、購入が必要な品目はありません。</div>';
+  // 品目が削除された場合に手動追加リストからも取り除く
+  [...shoppingManualIds].forEach(id => { if(!items.find(i => i.id === id)) shoppingManualIds.delete(id); });
+
+  const autoIds = new Set(items.filter(i => status(i) !== 'safe').map(i => i.id));
+  const allIds = new Set([...autoIds, ...shoppingManualIds]);
+  const list = items.filter(i => allIds.has(i.id)).sort((a,b) => ratio(a) - ratio(b));
+
+  if(list.length === 0){
+    box.innerHTML = '<div class="shop-empty">現在、買い物リストに品目がありません。</div>';
     return;
   }
 
-  box.innerHTML = needed.map(item => {
+  box.innerHTML = list.map(item => {
     const isPct = item.trackMode === 'percent';
-    const buyUnit = isPct ? '個' : (item.unit || '');
+    const checked = shoppingCheckState.has(item.id) ? shoppingCheckState.get(item.id) : true;
+    const qty = shoppingQtyState.has(item.id) ? shoppingQtyState.get(item.id) : suggestBuyQty(item);
     return `
     <div class="shop-row" data-id="${item.id}">
-      <input type="checkbox" class="shop-check" checked>
+      <input type="checkbox" class="shop-check" ${checked ? 'checked' : ''}>
       <div style="flex:1;">
         <div class="shop-name">${escapeHtml(item.name)}</div>
-        <div class="shop-sub">残り ${Number(item.current)||0}${escapeHtml(item.unit||'')}（発注ライン ${Number(item.threshold)||0}${escapeHtml(item.unit||'')}）</div>
+        <div class="shop-sub">残り ${Number(item.current)||0}${escapeHtml(item.unit||'')}${isPct ? '' : `（発注ライン ${Number(item.threshold)||0}${escapeHtml(item.unit||'')}）`}</div>
       </div>
-      <input type="number" class="shop-qty" min="1" step="1" value="${suggestBuyQty(item)}">
-      <span class="shop-sub">${escapeHtml(buyUnit)}</span>
+      ${isPct
+        ? `<span class="shop-sub">新品に交換</span>`
+        : `<input type="number" class="shop-qty" min="1" step="1" value="${qty}"><span class="shop-sub">${escapeHtml(item.unit||'')}</span>`
+      }
+      <button type="button" class="shop-remove" data-id="${item.id}" title="リストから外す">×</button>
+    </div>
+  `;
+  }).join('');
+}
+
+function renderCookList(){
+  const box = document.getElementById('cook-list');
+  if(!box) return;
+
+  [...cookSelected.keys()].forEach(id => { if(!items.find(i => i.id === id)) cookSelected.delete(id); });
+
+  const list = [...cookSelected.keys()].map(id => items.find(i => i.id === id)).filter(Boolean);
+
+  if(list.length === 0){
+    box.innerHTML = '<div class="shop-empty">使った品目をまだ追加していません。</div>';
+    return;
+  }
+
+  box.innerHTML = list.map(item => {
+    const isPct = item.trackMode === 'percent';
+    const unitLabel = isPct ? '%' : (item.unit || '');
+    const qty = cookSelected.get(item.id);
+    const checked = cookCheckState.has(item.id) ? cookCheckState.get(item.id) : true;
+    return `
+    <div class="shop-row" data-id="${item.id}">
+      <input type="checkbox" class="cook-check" ${checked ? 'checked' : ''}>
+      <div style="flex:1;">
+        <div class="shop-name">${escapeHtml(item.name)}</div>
+        <div class="shop-sub">残り ${Number(item.current)||0}${escapeHtml(unitLabel)}</div>
+      </div>
+      <input type="number" class="cook-qty" min="1" step="${isPct ? 5 : 1}" value="${qty}">
+      <span class="shop-sub">${escapeHtml(unitLabel)}</span>
+      <button type="button" class="shop-remove" data-id="${item.id}" title="リストから外す">×</button>
     </div>
   `;
   }).join('');
@@ -1207,9 +1293,12 @@ document.getElementById('btn-copy-shopping').addEventListener('click', async () 
     const id = row.dataset.id;
     const item = items.find(i => i.id === id);
     if(!item) return;
-    const qty = row.querySelector('.shop-qty').value;
-    const buyUnit = item.trackMode === 'percent' ? '個' : (item.unit||'');
-    lines.push(`・${item.name} ${qty}${buyUnit}`);
+    if(item.trackMode === 'percent'){
+      lines.push(`・${item.name}（新品に交換）`);
+    }else{
+      const qty = row.querySelector('.shop-qty').value;
+      lines.push(`・${item.name} ${qty}${item.unit||''}`);
+    }
   });
   const statusEl = document.getElementById('shopping-status');
   if(lines.length === 0){
@@ -1223,6 +1312,129 @@ document.getElementById('btn-copy-shopping').addEventListener('click', async () 
   }catch(e){
     statusEl.textContent = 'コピーに失敗しました。手動で選択してコピーしてください。';
   }
+});
+
+document.getElementById('btn-shopping-add').addEventListener('click', () => {
+  const input = document.getElementById('shopping-search');
+  const name = input.value.trim();
+  const statusEl = document.getElementById('shopping-status');
+  if(!name) return;
+  const item = items.find(i => i.name === name);
+  if(!item){
+    statusEl.textContent = '一致する品目が見つかりません。品目名を正確に入力してください。';
+    return;
+  }
+  shoppingManualIds.add(item.id);
+  input.value = '';
+  statusEl.textContent = `「${item.name}」をリストに追加しました。`;
+  renderShoppingList();
+});
+
+document.getElementById('shopping-list').addEventListener('click', (e) => {
+  const btn = e.target.closest('.shop-remove');
+  if(!btn) return;
+  shoppingManualIds.delete(btn.dataset.id);
+  shoppingCheckState.delete(btn.dataset.id);
+  shoppingQtyState.delete(btn.dataset.id);
+  renderShoppingList();
+});
+
+document.getElementById('shopping-list').addEventListener('change', (e) => {
+  const row = e.target.closest('.shop-row');
+  if(!row) return;
+  const id = row.dataset.id;
+  if(e.target.matches('.shop-check')){
+    shoppingCheckState.set(id, e.target.checked);
+  }else if(e.target.matches('.shop-qty')){
+    shoppingQtyState.set(id, Number(e.target.value) || 0);
+  }
+});
+
+document.getElementById('btn-apply-shopping').addEventListener('click', () => {
+  const rows = document.querySelectorAll('#shopping-list .shop-row');
+  let count = 0;
+  rows.forEach(row => {
+    const checked = row.querySelector('.shop-check').checked;
+    if(!checked) return;
+    const id = row.dataset.id;
+    const item = items.find(i => i.id === id);
+    if(!item) return;
+    if(item.trackMode === 'percent'){
+      item.current = 100;
+    }else{
+      const qtyInput = row.querySelector('.shop-qty');
+      const qty = Number(qtyInput ? qtyInput.value : 0) || 0;
+      item.current = (Number(item.current)||0) + qty;
+    }
+    item.updatedAt = new Date().toISOString();
+    persistItem(item);
+    shoppingManualIds.delete(id);
+    shoppingCheckState.delete(id);
+    shoppingQtyState.delete(id);
+    count++;
+  });
+  const statusEl = document.getElementById('shopping-status');
+  statusEl.textContent = count > 0 ? `${count}件の在庫を更新しました。` : 'チェックが入っている品目がありません。';
+});
+
+document.getElementById('btn-cook-add').addEventListener('click', () => {
+  const input = document.getElementById('cook-search');
+  const name = input.value.trim();
+  const statusEl = document.getElementById('cook-status');
+  if(!name) return;
+  const item = items.find(i => i.name === name && catMain(i) === '食品');
+  if(!item){
+    statusEl.textContent = '一致する食品が見つかりません。大分類が「食品」の品目のみ追加できます。';
+    return;
+  }
+  if(!cookSelected.has(item.id)){
+    cookSelected.set(item.id, item.trackMode === 'percent' ? 10 : 1);
+  }
+  input.value = '';
+  statusEl.textContent = `「${item.name}」を追加しました。`;
+  renderCookList();
+});
+
+document.getElementById('cook-list').addEventListener('click', (e) => {
+  const btn = e.target.closest('.shop-remove');
+  if(!btn) return;
+  cookSelected.delete(btn.dataset.id);
+  cookCheckState.delete(btn.dataset.id);
+  renderCookList();
+});
+
+document.getElementById('cook-list').addEventListener('change', (e) => {
+  const row = e.target.closest('.shop-row');
+  if(!row) return;
+  const id = row.dataset.id;
+  if(e.target.matches('.cook-qty')){
+    cookSelected.set(id, Number(e.target.value) || 0);
+  }else if(e.target.matches('.cook-check')){
+    cookCheckState.set(id, e.target.checked);
+  }
+});
+
+document.getElementById('btn-apply-cook').addEventListener('click', () => {
+  const rows = document.querySelectorAll('#cook-list .shop-row');
+  let count = 0;
+  rows.forEach(row => {
+    const checked = row.querySelector('.cook-check').checked;
+    if(!checked) return;
+    const id = row.dataset.id;
+    const item = items.find(i => i.id === id);
+    if(!item) return;
+    const qtyInput = row.querySelector('.cook-qty');
+    const qty = Number(qtyInput ? qtyInput.value : 0) || 0;
+    item.current = Math.max(0, (Number(item.current)||0) - qty);
+    item.updatedAt = new Date().toISOString();
+    persistItem(item);
+    cookSelected.delete(id);
+    cookCheckState.delete(id);
+    count++;
+  });
+  const statusEl = document.getElementById('cook-status');
+  statusEl.textContent = count > 0 ? `${count}件の在庫を減らしました。` : 'チェックが入っている品目がありません。';
+  renderCookList();
 });
 
 // ---- 編集モーダル ----
@@ -1317,7 +1529,7 @@ document.getElementById('btn-edit-save').addEventListener('click', async () => {
 });
 
 // ---- タブ切り替え ----
-const tabPanels = { list: document.getElementById('tab-list'), add: document.getElementById('tab-add'), shopping: document.getElementById('tab-shopping') };
+const tabPanels = { list: document.getElementById('tab-list'), add: document.getElementById('tab-add'), shopping: document.getElementById('tab-shopping'), cook: document.getElementById('tab-cook') };
 document.querySelectorAll('.tab-btn').forEach(btn => {
   btn.addEventListener('click', () => {
     const target = btn.dataset.tab;
@@ -1326,6 +1538,7 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
       tabPanels[key].style.display = (key === target) ? '' : 'none';
     });
     if(target === 'shopping') renderShoppingList();
+    if(target === 'cook') renderCookList();
   });
 });
 
