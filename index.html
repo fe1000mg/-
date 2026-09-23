@@ -759,42 +759,42 @@ async function saveItems(){
   }
 }
 
-async function persistItem(item){
+function persistItem(item){
+  // 楽観的UI更新: ローカルの items は呼び出し元で更新済みなので先に描画し、
+  // サーバーへの保存は裏で非同期に行う（画面が保存完了を待たないようにする）。
+  render();
   if(sheetUrl){
-    try{
-      await fetch(sheetUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-        body: JSON.stringify({ action: 'upsert', item })
-      });
-    }catch(e){
+    fetch(sheetUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify({ action: 'upsert', item })
+    }).then(() => {
+      loadItems(true);
+    }).catch(e => {
       setSyncStatus('スプレッドシートへの保存に失敗しました。通信環境をご確認ください。', true);
       console.error(e);
-      return;
-    }
-    await loadItems(true);
+    });
   }else{
-    await saveItems();
+    saveItems();
   }
 }
 
-async function deleteItemRemote(id){
+function deleteItemRemote(id){
+  items = items.filter(i => i.id !== id);
+  render();
   if(sheetUrl){
-    try{
-      await fetch(sheetUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-        body: JSON.stringify({ action: 'delete', id })
-      });
-    }catch(e){
+    fetch(sheetUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify({ action: 'delete', id })
+    }).then(() => {
+      loadItems(true);
+    }).catch(e => {
       setSyncStatus('スプレッドシートへの削除反映に失敗しました。', true);
       console.error(e);
-      return;
-    }
-    await loadItems(true);
+    });
   }else{
-    items = items.filter(i => i.id !== id);
-    await saveItems();
+    saveItems();
   }
 }
 
@@ -1094,8 +1094,8 @@ document.getElementById('add-btn').addEventListener('click', async () => {
     name, categoryMain, categorySub, trackMode, unit, current, threshold, useBy, bestBefore,
     updatedAt: new Date().toISOString()
   };
-  if(!sheetUrl) items.push(newItem);
-  await persistItem(newItem);
+  items.push(newItem);
+  persistItem(newItem);
   ['in-name','in-cat-main','in-cat-sub','in-unit','in-cur','in-thresh','in-usebefore','in-bestbefore'].forEach(id => document.getElementById(id).value = '');
   document.getElementById('in-cur-pct').value = 100;
   document.getElementById('in-cur-pct-val').textContent = 100;
@@ -1129,7 +1129,7 @@ document.getElementById('grid').addEventListener('change', async (e) => {
   if(!item) return;
   item.current = Number(e.target.value);
   item.updatedAt = new Date().toISOString();
-  await persistItem(item);
+  persistItem(item);
   render();
 });
 
@@ -1145,11 +1145,11 @@ document.getElementById('grid').addEventListener('click', async (e) => {
   if(act === 'inc'){
     item.current = (Number(item.current)||0) + 1;
     item.updatedAt = new Date().toISOString();
-    await persistItem(item);
+    persistItem(item);
   }else if(act === 'dec'){
     item.current = Math.max(0, (Number(item.current)||0) - 1);
     item.updatedAt = new Date().toISOString();
-    await persistItem(item);
+    persistItem(item);
   }else if(act === 'del'){
     if(!confirm(`「${item.name}」を削除しますか？`)) return;
     await deleteItemRemote(id);
@@ -1311,7 +1311,7 @@ document.getElementById('btn-edit-save').addEventListener('click', async () => {
   }
   item.updatedAt = new Date().toISOString();
 
-  await persistItem(item);
+  persistItem(item);
   closeEditModal();
   render();
 });
